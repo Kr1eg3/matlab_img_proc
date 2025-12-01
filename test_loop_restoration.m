@@ -127,6 +127,7 @@ catch ME
 end
 
 %% Шаг 6: Сравнение с эталоном (если есть)
+comparison = [];
 if ~isempty(referenceFilename) && exist(referenceFilename, 'file')
     fprintf('\nШаг 6: Сравнение с эталоном\n');
 
@@ -135,22 +136,7 @@ if ~isempty(referenceFilename) && exist(referenceFilename, 'file')
         fprintf('  ✓ Сравнение выполнено\n');
 
         % Вывод статистики
-        fprintf('\n=== Статистика разницы (Y plane) ===\n');
-        fprintf('  Максимальная разница: %d\n', comparison.Y.maxDiff);
-        fprintf('  Средняя разница: %.2f\n', comparison.Y.meanDiff);
-        fprintf('  Идентичных пикселей: %.2f%% (%d/%d)\n', ...
-            comparison.Y.identicalPercent, comparison.Y.identicalPixels, comparison.Y.totalPixels);
-
-        % Оценка результата
-        if comparison.Y.identicalPercent == 100
-            fprintf('\n✓✓✓ ТЕСТ ПРОЙДЕН ИДЕАЛЬНО! ✓✓✓\n');
-        elseif comparison.Y.identicalPercent >= 99
-            fprintf('\n✓✓ ТЕСТ ПРОЙДЕН С ОТЛИЧНЫМ РЕЗУЛЬТАТОМ! ✓✓\n');
-        elseif comparison.Y.identicalPercent >= 95
-            fprintf('\n✓ ТЕСТ ПРОЙДЕН С ХОРОШИМ РЕЗУЛЬТАТОМ\n');
-        else
-            fprintf('\n⚠ ЕСТЬ РАЗЛИЧИЯ С ЭТАЛОНОМ\n');
-        end
+        printComparisonStats(comparison);
     catch ME
         fprintf('  ✗ ОШИБКА при сравнении: %s\n', ME.message);
     end
@@ -162,53 +148,35 @@ end
 %% Шаг 7: Визуализация результатов
 fprintf('\nШаг 7: Визуализация результатов\n');
 
-figure('Name', 'Loop Restoration Test', 'Position', [50, 50, 1600, 500]);
+visOptions = struct();
+visOptions.title = 'Loop Restoration Test';
+visOptions.bitDepth = bitDepth;
+visOptions.inputTitle = 'Input (CDEF/CCSO)';
+visOptions.outputTitle = 'MATLAB Loop Restoration';
+visOptions.figurePosition = [50, 50, 1600, 500];
 
-% Входной кадр
-subplot(1, 3, 1);
-imshow(Y_input, [0, 1023]);
-title(sprintf('Input (CDEF/CCSO)\nRange: [%d, %d]', min(Y_input(:)), max(Y_input(:))));
-colorbar;
-
-% MATLAB выход
-subplot(1, 3, 2);
-imshow(Y_matlab, [0, 1023]);
-title(sprintf('MATLAB Loop Restoration\nRange: [%d, %d]', min(Y_matlab(:)), max(Y_matlab(:))));
-colorbar;
-
-% Разница (если есть эталон)
 if ~isempty(referenceFilename) && exist(referenceFilename, 'file')
-    subplot(1, 3, 3);
-    imagesc(comparison.Y.absDiff);
-    colormap(gca, 'hot');
-    colorbar;
-    title(sprintf('Absolute Difference\nMax: %d, Mean: %.2f', ...
-        comparison.Y.maxDiff, comparison.Y.meanDiff));
-    axis image;
-else
-    % Разница между входом и выходом
-    subplot(1, 3, 3);
-    diff = int32(Y_matlab) - int32(Y_input);
-    imagesc(abs(diff));
-    colormap(gca, 'hot');
-    colorbar;
-    title(sprintf('|Output - Input|\nMax: %d, Mean: %.2f', ...
-        max(abs(diff(:))), mean(abs(diff(:)))));
-    axis image;
+    [Y_ref, ~, ~] = readYUV(referenceFilename, width, height, frameNum, bitDepth, chromaFormat);
+    visOptions.Y_reference = Y_ref;
+    visOptions.referenceTitle = 'Reference (Analyzer LR)';
 end
 
+visualizeComparison(Y_input, Y_matlab, comparison, visOptions);
 fprintf('  ✓ Визуализация создана\n');
 
-%% Итог
-fprintf('\n========================================\n');
-fprintf('ТЕСТ ЗАВЕРШЕН\n');
-fprintf('========================================\n');
-fprintf('\nСледующие шаги:\n');
-fprintf('1. Проверьте выходной файл: %s\n', outputFilename);
-fprintf('2. Сравните с эталоном из анализатора (если есть)\n');
-fprintf('3. Для полной функциональности добавьте:\n');
-fprintf('   - Реальные коэффициенты фильтра из bitstream\n');
-fprintf('   - Multi-class фильтрацию\n');
-fprintf('   - PC Wiener фильтр\n');
-fprintf('   - Chroma фильтрацию\n');
-fprintf('========================================\n');
+%% Итоговая оценка
+if ~isempty(comparison)
+    resultOptions = struct();
+    resultOptions.testName = 'Loop Restoration';
+    resultOptions.recommendations = {
+        'Проверьте правильность коэффициентов фильтра из bitstream'
+        'Убедитесь что файлы экстрагированы на правильной стадии пайплайна'
+        'Проверьте что используется правильный restoration_type'
+    };
+    printTestResult(comparison, resultOptions);
+else
+    fprintf('\n========================================\n');
+    fprintf('ТЕСТ ЗАВЕРШЕН (без сравнения с эталоном)\n');
+    fprintf('========================================\n');
+    fprintf('\nДля полного теста укажите referenceFilename\n');
+end
